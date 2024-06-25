@@ -1,0 +1,56 @@
+name: build
+
+on:
+  push:
+    branches: [ master ]
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set Node.js 12.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 12.x
+
+      - name: Install dependencies
+        uses: borales/actions-yarn@v4
+        with:
+          cmd: install
+
+      - name: Build for production
+        uses: borales/actions-yarn@v4
+        with:
+          cmd: build
+
+      - name: Install Go
+        uses: actions/setup-go@v2
+        
+      - name: Install statik & build embed files
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          go install github.com/rakyll/statik@latest
+          statik -src=dist
+
+      - name: Commit embed files
+        run: |
+          cd ..
+          git clone https://github.com/gorse-io/dashboard.git dashboard-statik
+          cd dashboard-statik
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git checkout statik || git checkout --orphan statik
+          git rm -r --cached .
+          rm statik.go go.mod go.sum
+          cp -f ../dashboard/statik/statik.go statik.go
+          go mod init github.com/gorse-io/dashboard
+          go mod tidy
+          git add statik.go go.mod go.sum
+          git commit -m "Build embed files"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git push origin statik
